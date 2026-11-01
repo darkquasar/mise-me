@@ -1,0 +1,4 @@
+# Global tools for this base. Extensions add more through
+# ~/.config/mise/conf.d/, which mise merges with this file.
+[tools]
+# jq = "latest"

@@ -37,5 +37,11 @@ command -v bat >/dev/null 2>&1 && alias cat="bat"
 command -v zoxide >/dev/null 2>&1 && eval "$(zoxide init zsh)"
 command -v starship >/dev/null 2>&1 && eval "$(starship init zsh)"
 
+# Extensions drop their shell snippets here
+for _f in "${XDG_CONFIG_HOME:-$HOME/.config}"/zsh/conf.d/*.zsh(N); do
+  source "$_f"
+done
+unset _f
+
 # Machine-local additions (never part of mise-me)
 [ -r "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"

@@ -3,8 +3,14 @@
 # Tarballs rather than git clones: no .git folder, so the local git identity
 # is never written into the plugin folders.
 set -eu
-root=$(cd "$(dirname "$0")/.." && pwd)
+here=$(cd "$(dirname "$0")" && pwd)
+root=$here
+until [ -f "$root/lib/common.sh" ]; do
+  [ "$root" != / ] || { echo "error: cannot find lib/common.sh" >&2; exit 1; }
+  root=$(dirname "$root")
+done
 . "$root/lib/common.sh"
+base=$(dirname "$here")
 dir="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT

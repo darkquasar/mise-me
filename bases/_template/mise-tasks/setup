@@ -1,0 +1,28 @@
+#!/bin/sh
+#MISE description="Set up this base"
+set -eu
+here=$(cd "$(dirname "$0")" && pwd)
+root=$here
+until [ -f "$root/lib/common.sh" ]; do
+  [ "$root" != / ] || { echo "error: cannot find lib/common.sh" >&2; exit 1; }
+  root=$(dirname "$root")
+done
+. "$root/lib/common.sh"
+base=$(dirname "$here")
+cd "$base"
+
+# Preflight: check what this base cannot install itself, before changing any file.
+for cmd in curl tar zsh; do
+  command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required but not installed"
+done
+
+base_begin "$(basename "$base")"   # refuses if this machine has another base
+step_self                     # mise at ~/.local/bin/mise
+install_tree "$base/home"     # dotfiles from home/ (replaced files are backed up)
+step_tools                    # tools from home/.config/mise/config.toml
+
+# Base-specific steps: add scripts to mise-tasks/ and run them here, e.g.
+#   "$MISE" run my-step
+
+base_end "$(basename "$base")"     # records the base when run on its own
+log "base $(basename "$base") is set up"

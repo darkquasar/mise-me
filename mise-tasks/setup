@@ -1,30 +1,114 @@
 #!/bin/sh
-#MISE description="Set up the whole environment (mise, dotfiles, tools, prompt, zsh plugins, terminal)"
+#MISE description="Set up a base and its extensions on this machine"
+#USAGE arg "[base]" help="Base to set up (see `mise run list`). Omit it to re-apply what this machine has."
+#USAGE flag "--with <extensions>" help="Comma-separated extensions, for example: agents. --with '' removes all."
+#USAGE flag "--switch" help="Allow replacing the base this machine already has"
+#
+# Phases: 1 plan (validate everything, no changes), 2 reconcile (move aside
+# extension files no longer wanted), 3 the base's own setup, 4 extensions and
+# their tools, 5 record what this machine has.
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 . "$root/lib/common.sh"
 
-# Preflight: check everything we cannot install ourselves before touching any file.
-platform="$(uname -s) $(uname -m)"
-case $platform in
-  "Darwin arm64" | "Linux x86_64" | "Linux aarch64" | "Linux arm64") ;;
-  *) die "unsupported platform: $platform (supported: macOS on Apple silicon, Linux x86_64 or arm64)" ;;
-esac
-for cmd in curl tar zsh; do
-  command -v "$cmd" >/dev/null 2>&1 ||
-    die "$cmd is required but not installed (for example: sudo apt install $cmd)"
+state=$(mise_me_state)
+plan=$(mktemp -d)
+trap 'rm -rf "$plan"' EXIT
+
+# --- What is wanted: the arguments, or what this machine already has -------
+rec_base=$(recorded_base)
+base=${usage_base:-}
+if [ -n "${usage_with+set}" ]; then
+  with=$usage_with
+else
+  with=""
+fi
+if [ -z "$base" ]; then
+  [ -n "$rec_base" ] || die "no base given and none recorded on this machine; run 'mise run list' to see the bases"
+  base=$rec_base
+  # A bare `setup` keeps the recorded extensions; `--with ''` clears them.
+  [ -n "${usage_with+set}" ] || with=$(recorded_with)
+fi
+
+# ext_dir EXT: the folder of an extension for $base. A base's own
+# extensions/ comes first, then the shared extensions/ folder.
+ext_dir() {
+  if [ -d "$root/bases/$base/extensions/$1" ]; then
+    printf '%s' "$root/bases/$base/extensions/$1"
+  elif [ -d "$root/extensions/$1" ]; then
+    printf '%s' "$root/extensions/$1"
+  fi
+}
+
+# --- 1. Plan: validate everything before changing anything ----------------
+valid_name "$base" || die "invalid base name: $base"
+[ -f "$root/bases/$base/mise-tasks/setup" ] || die "unknown base: $base (run 'mise run list')"
+if [ -n "$rec_base" ] && [ "$rec_base" != "$base" ] && [ "${usage_switch:-}" != true ]; then
+  die "this machine has base '$rec_base'; add --switch to replace it with '$base'"
+fi
+
+exts=""
+if [ -n "$with" ]; then
+  case ",$with," in *,,*) die "empty extension name in --with '$with'" ;; esac
+  printf '%s\n' "$with" | tr ',' '\n' > "$plan/with"
+  while IFS= read -r ext; do
+    valid_name "$ext" || die "invalid extension name: '$ext'"
+    dir=$(ext_dir "$ext")
+    [ -n "$dir" ] || die "unknown extension for base '$base': $ext (run 'mise run list')"
+    if [ "$dir" = "$root/extensions/$ext" ]; then
+      if ! toml_list "$dir/ext.toml" works_with | grep -qx "$base"; then
+        die "extension '$ext' does not work with base '$base' (see works_with in extensions/$ext/ext.toml)"
+      fi
+    fi
+    case " $exts " in *" $ext "*) ;; *) exts="${exts:+$exts }$ext" ;; esac
+  done < "$plan/with"
+fi
+
+# Every destination an extension writes must be its own: not a file the base
+# ships, and not a file another selected extension ships.
+tree_dests "$root/bases/$base/home" "$plan/base.dests"
+: > "$plan/desired"
+for ext in $exts; do
+  tree_dests "$(ext_dir "$ext")/home" "$plan/ext.$ext"
+  while IFS= read -r dest; do
+    if grep -Fxq -- "$dest" "$plan/base.dests"; then
+      die "extension '$ext' would replace $dest, which base '$base' owns"
+    fi
+    if grep -Fxq -- "$dest" "$plan/desired"; then
+      die "more than one selected extension ships $dest"
+    fi
+    printf '%s\n' "$dest" >> "$plan/desired"
+  done < "$plan/ext.$ext"
 done
 
-for task in self dotfiles tools prompt zsh-plugins terminal; do
-  "$MISE" run "$task"
+# --- 2. Reconcile: move aside extension files this setup no longer wants ---
+# Every ownership list on disk counts, including ones left by a failed run.
+mkdir -p "$state/files"
+for list in "$state"/files/*.list; do
+  [ -f "$list" ] || continue
+  name=$(basename "$list" .list)
+  while IFS= read -r file; do
+    grep -Fxq -- "$file" "$plan/desired" || move_aside "$file"
+  done < "$list"
+  rm -f "$list"
+  case " $exts " in *" $name "*) ;; *) log "removed extension: $name" ;; esac
 done
-cat <<'MSG'
+# Record ownership before installing, so a failure part-way stays tracked.
+for ext in $exts; do
+  cp "$plan/ext.$ext" "$state/files/$ext.list"
+done
 
-Done. Per-machine steps that are deliberately not automated:
-  - git config --global user.name / user.email
-  - sbx login              (Docker Sandboxes)
-  - claude / codex         (each signs in on first run)
-  - exec zsh               (or open a new terminal)
-Anything personal belongs in ~/.zshrc.local, which mise-me never touches.
-Replaced files are kept under ~/.local/state/mise-me/backups.
-MSG
+# --- 3. The base: it runs its own setup from its own folder ---------------
+log "base: $base"
+(cd "$root/bases/$base" && MISE_ME_ROUTED=1 "$MISE" run setup)
+
+# --- 4. Extensions: copy their files, then install the tools they add -----
+for ext in $exts; do
+  log "extension: $ext"
+  install_tree "$(ext_dir "$ext")/home"
+done
+[ -z "$exts" ] || step_tools
+
+# --- 5. Record what this machine now has, so `setup` alone re-applies it --
+write_applied "$base" "$(printf '%s' "$exts" | tr ' ' ',')"
+log "this machine now has base '$base'${exts:+ with $(printf '%s' "$exts" | tr ' ' ',')}"

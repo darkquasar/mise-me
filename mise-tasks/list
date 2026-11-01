@@ -1,0 +1,32 @@
+#!/bin/sh
+#MISE description="List the bases and extensions in this repo"
+set -eu
+root=$(cd "$(dirname "$0")/.." && pwd)
+. "$root/lib/common.sh"
+
+desc() { [ -f "$1" ] && toml_value "$1" description || true; }
+
+echo "Bases (mise run setup <base>):"
+for dir in "$root"/bases/*/; do
+  name=$(basename "$dir")
+  case $name in _*) continue ;; esac
+  printf '  %-16s %s\n' "$name" "$(desc "$dir/base.toml")"
+  for ext in "$dir"extensions/*/; do
+    [ -d "$ext" ] || continue
+    printf '    + %-12s %s\n' "$(basename "$ext")" "$(desc "$ext/ext.toml")"
+  done
+done
+
+echo
+echo "Shared extensions (--with <name>):"
+for ext in "$root"/extensions/*/; do
+  [ -d "$ext" ] || continue
+  bases=$(toml_list "$ext/ext.toml" works_with | tr '\n' ' ')
+  printf '  %-16s %s (works with: %s)\n' "$(basename "$ext")" "$(desc "$ext/ext.toml")" "${bases% }"
+done
+
+applied="$(mise_me_state)/applied"
+if [ -f "$applied" ]; then
+  echo
+  echo "This machine: $(tr '\n' ' ' < "$applied")"
+fi

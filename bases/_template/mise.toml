@@ -1,0 +1,2 @@
+# Lets you run this base on its own: cd bases/<name> && mise run setup
+min_version = "2025.1.0"
