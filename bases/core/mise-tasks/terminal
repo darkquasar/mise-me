@@ -1,8 +1,14 @@
 #!/bin/sh
 #MISE description="macOS only: JetBrainsMono Nerd Font, iTerm2 and its mise-me profile"
 set -eu
-root=$(cd "$(dirname "$0")/.." && pwd)
+here=$(cd "$(dirname "$0")" && pwd)
+root=$here
+until [ -f "$root/lib/common.sh" ]; do
+  [ "$root" != / ] || { echo "error: cannot find lib/common.sh" >&2; exit 1; }
+  root=$(dirname "$root")
+done
 . "$root/lib/common.sh"
+base=$(dirname "$here")
 if ! is_macos; then
   log "not macOS, skipping terminal setup"
   exit 0
@@ -25,14 +31,12 @@ else
   done
 fi
 
+# iTerm2 itself is installed by hand (see README): there is no pinned,
+# checksummed download for it here.
 if [ ! -d /Applications/iTerm.app ] && [ ! -d "$HOME/Applications/iTerm.app" ]; then
-  if command -v brew >/dev/null 2>&1; then
-    brew install --cask iterm2
-  else
-    warn "iTerm2 is not installed; get it from https://iterm2.com/downloads.html"
-  fi
+  warn "iTerm2 is not installed; get it from https://iterm2.com/downloads.html"
 fi
 
-install_file "$root/assets/iterm2-profile.json" \
+install_file "$base/assets/iterm2-profile.json" \
   "$HOME/Library/Application Support/iTerm2/DynamicProfiles/mise-me.json"
 log "in iTerm2: Settings > Profiles > select 'mise-me' > Other Actions > Set as Default"

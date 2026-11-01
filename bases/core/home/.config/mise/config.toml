@@ -1,5 +1,5 @@
-# Global tools for the mise-me environment.
-# Installed into $HOME by `mise run setup`; nothing here is machine specific.
+# Global tools for the core base. Extensions add more through
+# ~/.config/mise/conf.d/, which mise merges with this file.
 
 [tools]
 # Shell and prompt
@@ -19,10 +19,6 @@ rust = "latest"
 uv = "latest"
 pixi = "latest"
 deno = "latest"
-
-# Coding agent CLIs (sign in on each machine; no credentials are shipped)
-claude = "latest"
-codex = "latest"
 
 # Workspace: herdr (multiplexer) and patronus
 herdr = "latest"

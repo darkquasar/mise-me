@@ -1,8 +1,0 @@
-#!/bin/sh
-#MISE description="Install every tool in the global mise config"
-set -eu
-root=$(cd "$(dirname "$0")/.." && pwd)
-. "$root/lib/common.sh"
-cd "$HOME"
-"$MISE" install --yes
-"$MISE" ls --global

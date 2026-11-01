@@ -1,0 +1,2 @@
+# The core base: a complete terminal environment for macOS (Apple silicon) and Linux.
+description = "zsh, starship, herdr, sbx, patronus and everyday CLI tools"

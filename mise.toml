@@ -1,4 +1,3 @@
-# mise-me: tasks that set up the environment.
-# Global tools live in home/.config/mise/config.toml and are copied into $HOME.
-# Tasks are the executable scripts in mise-tasks/. Start with `mise run setup`.
+# mise-me: the router. Bases live in bases/, shared extensions in extensions/.
+# Tasks are the scripts in mise-tasks/: list, setup, new-base.
 min_version = "2025.1.0"

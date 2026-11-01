@@ -1,0 +1,3 @@
+# Coding agent CLIs. Each one signs in on first run; no credentials are shipped.
+description = "claude and codex CLIs (latest)"
+works_with = ["core"]

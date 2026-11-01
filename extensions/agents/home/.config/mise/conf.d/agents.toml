@@ -1,0 +1,4 @@
+# Added by the agents extension. Each CLI signs in on first run.
+[tools]
+claude = "latest"
+codex = "latest"

@@ -1,0 +1,22 @@
+#!/bin/sh
+#MISE description="Create a new base from bases/_template"
+#USAGE arg "<name>" help="Name of the new base: lowercase letters, digits and dashes"
+set -eu
+root=$(cd "$(dirname "$0")/.." && pwd)
+. "$root/lib/common.sh"
+
+name=${usage_name:-}
+valid_name "$name" || die "invalid base name '$name': use lowercase letters, digits and dashes"
+dest="$root/bases/$name"
+[ ! -e "$dest" ] || die "bases/$name already exists"
+cp -R "$root/bases/_template" "$dest"
+sed "s/__NAME__/$name/g" "$dest/base.toml" > "$dest/base.toml.tmp"
+mv "$dest/base.toml.tmp" "$dest/base.toml"
+log "created bases/$name"
+cat <<MSG
+Next:
+  1. describe it in bases/$name/base.toml
+  2. add tools to bases/$name/home/.config/mise/config.toml
+  3. add dotfiles under bases/$name/home/ and steps under bases/$name/mise-tasks/
+  4. try it: ./bin/mise run setup $name
+MSG
