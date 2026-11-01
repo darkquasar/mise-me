@@ -1,0 +1,10 @@
+#!/bin/sh
+#MISE description="Write the stock starship gruvbox-rainbow preset"
+set -eu
+root=$(cd "$(dirname "$0")/.." && pwd)
+. "$root/lib/common.sh"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+(cd "$HOME" && "$MISE" exec -- starship preset gruvbox-rainbow -o "$tmp/starship.toml")
+# starship reads STARSHIP_CONFIG or ~/.config/starship.toml (not XDG_CONFIG_HOME).
+install_file "$tmp/starship.toml" "${STARSHIP_CONFIG:-$HOME/.config/starship.toml}"

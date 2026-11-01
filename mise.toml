@@ -1,0 +1,4 @@
+# mise-me: tasks that set up the environment.
+# Global tools live in home/.config/mise/config.toml and are copied into $HOME.
+# Tasks are the executable scripts in mise-tasks/. Start with `mise run setup`.
+min_version = "2025.1.0"

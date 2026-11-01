@@ -1,0 +1,14 @@
+#!/bin/sh
+#MISE description="Make mise a permanent command at ~/.local/bin/mise"
+set -eu
+root=$(cd "$(dirname "$0")/.." && pwd)
+. "$root/lib/common.sh"
+dest="$HOME/.local/bin/mise"
+if existing=$(command -v mise 2>/dev/null); then
+  log "mise already on PATH at $existing"
+elif [ -n "${MISE_INSTALL_PATH:-}" ] && [ -x "$MISE_INSTALL_PATH" ]; then
+  # Running through ./bin/mise: keep the mise it downloaded.
+  install_file "$MISE_INSTALL_PATH" "$dest"
+else
+  die "no mise binary to install; run setup through ./bin/mise"
+fi

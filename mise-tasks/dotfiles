@@ -1,0 +1,15 @@
+#!/bin/sh
+#MISE description="Copy the files under home/ into place (replaced files are backed up)"
+set -eu
+root=$(cd "$(dirname "$0")/.." && pwd)
+. "$root/lib/common.sh"
+cd "$root/home"
+find . -type f | sort | while read -r rel; do
+  rel=${rel#./}
+  case $rel in
+    .config/mise/*) dest="$(mise_config_dir)/${rel#.config/mise/}" ;;
+    .config/*) dest="$(config_home)/${rel#.config/}" ;;
+    *) dest="$HOME/$rel" ;;
+  esac
+  install_file "$root/home/$rel" "$dest"
+done
