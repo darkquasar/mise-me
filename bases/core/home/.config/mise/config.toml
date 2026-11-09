@@ -8,9 +8,15 @@ eza = "latest"
 bat = "latest"
 zoxide = "latest"
 fzf = "latest"
+# fd feeds fzf's Ctrl+T and Option+C (faster than find, skips .gitignored files)
+fd = "latest"
+# atuin replaces Ctrl+R with a searchable history database (local only)
+atuin = "latest"
 ripgrep = "latest"
 jq = "latest"
 github-cli = "latest"
+# Prompts and the next-steps box during setup
+gum = "latest"
 
 # Languages and package managers
 node = "22"
@@ -28,11 +34,13 @@ version = "latest"
 rename_exe = "patronus"
 
 # Docker Sandboxes. Not in the mise registry, so it comes from its GitHub
-# releases. macOS ships a signed app bundle; Linux ships a plain directory.
+# releases (a signed app bundle). macOS only: on Linux, sandboxes need Docker
+# plus KVM, which a VM only has with nested virtualization, so mise skips the
+# tool there (`os`). To try it on a Linux box that has /dev/kvm, add it to
+# ~/.config/mise/conf.d/ with the linux-* assets from the same release.
 [tools."github:docker/sbx-releases"]
 version = "latest"
+os = ["macos"]
 
 [tools."github:docker/sbx-releases".platforms]
 macos-arm64 = { asset_pattern = "DockerSandboxes-darwin.tar.gz", bin_path = "Sbx.app/Contents/MacOS" }
-linux-x64 = { asset_pattern = "DockerSandboxes-linux-amd64.tar.gz", bin_path = "docker-sbx" }
-linux-arm64 = { asset_pattern = "DockerSandboxes-linux-arm64.tar.gz", bin_path = "docker-sbx" }

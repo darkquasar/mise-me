@@ -1,5 +1,16 @@
 #!/bin/sh
-#MISE description="Write the stock starship gruvbox-rainbow preset"
+#MISE description="Write the starship prompt config in the chosen colour theme (pixel-gem by default)"
+#USAGE flag "--prompt <theme>" help="Prompt colour theme: pixel-gem (default), tokyo-night, catppuccin-latte, catppuccin-frappe, catppuccin-macchiato or catppuccin-mocha"
+#
+# Which theme comes from, in order: MISE_ME_PROMPT (the --prompt flag), the
+# choice saved on this machine, or pixel-gem. Only an explicit choice is saved
+# (~/.local/state/mise-me/prompt), so a bare `setup` keeps it. starship reads
+# its config on every prompt, so a change shows up in open shells at once.
+#
+# Each theme is a starship preset plus small edits, generated here rather than
+# kept as a file so preset fixes upstream arrive with starship. Every edit has
+# a guard that stops setup, rather than install something half-edited, if a
+# starship update changes the preset.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 root=$here
@@ -9,8 +20,76 @@ until [ -f "$root/lib/common.sh" ]; do
 done
 . "$root/lib/common.sh"
 base=$(dirname "$here")
+
+# --- Which theme -------------------------------------------------------------
+if [ -n "${usage_prompt+set}" ]; then
+  MISE_ME_PROMPT=$(parse_prompt "$usage_prompt")
+fi
+saved_file="$(mise_me_state)/prompt"
+if [ -n "${MISE_ME_PROMPT:-}" ]; then
+  theme=$(parse_prompt "$MISE_ME_PROMPT")
+  mkdir -p "$(mise_me_state)"
+  printf '%s\n' "$theme" > "$saved_file.tmp"
+  mv "$saved_file.tmp" "$saved_file"
+elif [ -s "$saved_file" ] && theme=$(parse_prompt "$(cat "$saved_file")" 2>/dev/null); then
+  log "prompt theme: $theme (saved choice; change it with --prompt)"
+else
+  theme=pixel-gem
+fi
+
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-(cd "$HOME" && "$MISE" exec -- starship preset gruvbox-rainbow -o "$tmp/starship.toml")
+preset() { (cd "$HOME" && "$MISE" exec -- starship preset "$1" -o "$tmp/preset.toml"); }
+upstream() { die "the $1 preset changed upstream ($2); update bases/core/mise-tasks/prompt"; }
+
+case $theme in
+  pixel-gem)
+    # pastel-powerline, with a clock and readable segments.
+    preset pastel-powerline
+    # The preset shows the time as "♥ 12:34"; use the Nerd Font clock (U+F43A)
+    # that gruvbox-rainbow uses instead. Byte-wise so the locale does not matter.
+    heart=$(printf '\342\231\245')
+    clock=$(printf '\357\220\272')
+    #
+    # Readability: the preset writes the terminal's text colour on every segment,
+    # which on its two light ones (the peach git segment #FCA17D and the light
+    # blue language segment #86BBD8) is hard to read. The git segment becomes
+    # Gruvbox Material orange, and both light segments get dark text.
+    LC_ALL=C sed \
+      -e "/^format = '\[ $heart \$time \]/s/$heart/$clock/" \
+      -e 's/#FCA17D/#E78A4E/g' \
+      -e 's/^style = "bg:#E78A4E"$/style = "bg:#E78A4E fg:#282828"/' \
+      -e 's/^style = "bg:#86BBD8"$/style = "bg:#86BBD8 fg:#282828"/' \
+      "$tmp/preset.toml" > "$tmp/starship.toml"
+    grep -q "\$time" "$tmp/starship.toml" && LC_ALL=C grep -q "$clock \$time" "$tmp/starship.toml" ||
+      upstream pastel-powerline "time segment"
+    grep -q '^style = "bg:#E78A4E fg:#282828"$' "$tmp/starship.toml" &&
+      grep -q '^style = "bg:#86BBD8 fg:#282828"$' "$tmp/starship.toml" &&
+      ! grep -q '#FCA17D' "$tmp/starship.toml" ||
+      upstream pastel-powerline "colours"
+    ;;
+  tokyo-night)
+    # starship's tokyo-night preset as it comes: dark blue-grey segments with
+    # light text and a clock, so nothing needs editing. The guard only checks
+    # the preset still has the time segment it is meant to have.
+    preset tokyo-night
+    grep -q '^\$time\\$' "$tmp/preset.toml" && grep -q '^\[time\]$' "$tmp/preset.toml" ||
+      upstream tokyo-night "time segment"
+    cp "$tmp/preset.toml" "$tmp/starship.toml"
+    ;;
+  catppuccin-*)
+    # catppuccin-powerline ships all four flavours as named palettes and picks
+    # mocha; the theme name picks the flavour. Its segments already use dark
+    # text (fg:crust) and a clock, so nothing else needs editing.
+    preset catppuccin-powerline
+    flavour="catppuccin_${theme#catppuccin-}"
+    grep -q "^palette = 'catppuccin_mocha'$" "$tmp/preset.toml" || upstream catppuccin-powerline "palette line"
+    grep -q "^\[palettes\.$flavour\]$" "$tmp/preset.toml" || upstream catppuccin-powerline "no $flavour palette"
+    sed "s/^palette = 'catppuccin_mocha'$/palette = '$flavour'/" "$tmp/preset.toml" > "$tmp/starship.toml"
+    grep -q "^palette = '$flavour'$" "$tmp/starship.toml" || upstream catppuccin-powerline "palette line"
+    ;;
+  *) die "unknown prompt theme '$theme'" ;;
+esac
 # starship reads STARSHIP_CONFIG or ~/.config/starship.toml (not XDG_CONFIG_HOME).
 install_file "$tmp/starship.toml" "${STARSHIP_CONFIG:-$HOME/.config/starship.toml}"
+log "prompt: $theme"

@@ -1,5 +1,7 @@
 #!/bin/sh
 #MISE description="Set up the core base (zsh, starship, herdr, sbx, patronus, CLI tools)"
+#USAGE flag "--terminal <apps>" help="macOS: terminal apps to set up: ghostty, iterm2, terminal-app (comma-separated), all, none, or ask"
+#USAGE flag "--prompt <theme>" help="Prompt colour theme: pixel-gem (default), tokyo-night, catppuccin-latte, catppuccin-frappe, catppuccin-macchiato or catppuccin-mocha"
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 root=$here
@@ -17,10 +19,29 @@ case $platform in
   "Darwin arm64" | "Linux x86_64" | "Linux aarch64" | "Linux arm64") ;;
   *) die "unsupported platform: $platform (supported: macOS on Apple silicon, Linux x86_64 or arm64)" ;;
 esac
+# The hint names this machine's package manager (Ubuntu Server ships without zsh).
+missing=""
 for cmd in curl tar zsh; do
-  command -v "$cmd" >/dev/null 2>&1 ||
-    die "$cmd is required but not installed (for example: sudo apt install $cmd)"
+  command -v "$cmd" >/dev/null 2>&1 || missing="${missing:+$missing }$cmd"
 done
+if [ -n "$missing" ]; then
+  if command -v apt-get >/dev/null 2>&1; then how="sudo apt install $missing"
+  elif command -v dnf >/dev/null 2>&1; then how="sudo dnf install $missing"
+  elif command -v pacman >/dev/null 2>&1; then how="sudo pacman -S $missing"
+  elif command -v apk >/dev/null 2>&1; then how="sudo apk add $missing"
+  else how="install $missing with your package manager"
+  fi
+  die "required but not installed: $missing ($how)"
+fi
+# Run on its own (cd bases/core && mise run setup --terminal ... --prompt ...).
+if [ -n "${usage_terminal+set}" ]; then
+  MISE_ME_TERMINALS=$(parse_terminals "$usage_terminal")
+  export MISE_ME_TERMINALS
+fi
+if [ -n "${usage_prompt+set}" ]; then
+  MISE_ME_PROMPT=$(parse_prompt "$usage_prompt")
+  export MISE_ME_PROMPT
+fi
 
 base_begin "$(basename "$base")"   # refuses if this machine has another base
 step_self
@@ -29,13 +50,33 @@ step_tools
 for task in prompt zsh-plugins terminal; do
   "$MISE" run "$task"
 done
-base_end "$(basename "$base")"
-cat <<'MSG'
 
-core is set up. Per-machine steps that are deliberately not automated:
-  - git config --global user.name / user.email
-  - sbx login              (Docker Sandboxes)
-  - exec zsh               (or open a new terminal)
-Anything personal belongs in ~/.zshrc.local, which mise-me never touches.
-Replaced files are kept under ~/.local/state/mise-me/backups.
-MSG
+# Per-person steps, deliberately not automated: identity, sign-ins, and the
+# login shell (chsh asks for a password, which setup never does).
+next_step "Reload your shell" '$ exec zsh' "or open a new terminal tab"
+# Linux lands in bash by default; macOS has used zsh since Catalina. $SHELL
+# is the login shell as the OS set it (not the shell running this script).
+case $(basename "${SHELL:-zsh}") in
+  zsh) ;;
+  *) next_step "Make zsh your login shell" '$ chsh -s "$(command -v zsh)"' \
+       "then log out and back in (or reconnect over SSH)" ;;
+esac
+# Read the config files rather than run git: on a Mac without the Command
+# Line Tools, running git pops up an installer.
+if ! grep -Eqs '^[[:space:]]*name[[:space:]]*=' "$HOME/.gitconfig" "$(config_home)/git/config"; then
+  next_step "Set your git identity" \
+    '$ git config --global user.name "Your Name"' \
+    '$ git config --global user.email "you@example.com"'
+fi
+if is_macos; then
+  next_step "Sign in to Docker Sandboxes (once per machine)" '$ sbx login'
+else
+  # Headless Linux, typically a VM reached over SSH: the terminal, its font
+  # and sbx live on the machine you connect from.
+  next_note "The prompt's icons are drawn by the terminal you connect from; it needs a Nerd Font (a Mac set up with mise-me has one)."
+  next_note "Docker Sandboxes (sbx) is not installed on Linux: it needs Docker and KVM, which a VM only has with nested virtualization."
+fi
+next_note "Anything personal belongs in ~/.zshrc.local, which mise-me never touches."
+next_note "Files that setup replaced are kept in ~/.local/state/mise-me/backups."
+log "core is set up"
+base_end "$(basename "$base")"
