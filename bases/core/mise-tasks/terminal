@@ -1,5 +1,13 @@
 #!/bin/sh
-#MISE description="macOS only: JetBrainsMono Nerd Font, iTerm2 and its mise-me profile"
+#MISE description="macOS only: JetBrainsMono Nerd Font, then Ghostty, iTerm2 and/or Terminal.app (asks which)"
+#
+# Which apps to set up comes from, in order: MISE_ME_TERMINALS (the
+# --terminal flag), the choice saved on this machine, a prompt, or (when
+# nobody can answer) the terminal setup is running in. Ghostty and iTerm2 are
+# downloaded (pinned, checksummed) only after a yes to a question, or when
+# the environment has MISE_ME_INSTALL_APPS=yes (=no never asks). Everything
+# about this machine is detected here at run time; the only thing saved is
+# the choice itself, under ~/.local/state/mise-me.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 root=$here
@@ -13,15 +21,20 @@ if ! is_macos; then
   log "not macOS, skipping terminal setup"
   exit 0
 fi
+tmp=$(mktemp -d)
+# A disk image still mounted after a failure is detached before the cleanup.
+# The trap keeps the script's own exit status: under /bin/sh (bash 3.2) a
+# failing command in an EXIT trap would otherwise turn a success into exit 1.
+trap 'rc=$?; [ ! -d "$tmp/mnt" ] || hdiutil detach -quiet "$tmp/mnt" 2>/dev/null || true; rm -rf "$tmp"; exit $rc' EXIT
 
+# --- The font all three apps use (the prompt's glyphs show as "?" without it) ---
 font_version=v3.5.1
 font_sha=04d5e8f903693f9dd13e16f867e994834e681eb3c72c0d337a770dcda09010cf
+font_name=JetBrainsMonoNF-Regular   # PostScript name, as iTerm2 and Terminal.app want it
 fonts="$HOME/Library/Fonts"
 if [ -f "$fonts/JetBrainsMonoNerdFont-Regular.ttf" ]; then
   log "JetBrainsMono Nerd Font already installed"
 else
-  tmp=$(mktemp -d)
-  trap 'rm -rf "$tmp"' EXIT
   fetch "https://github.com/ryanoasis/nerd-fonts/releases/download/$font_version/JetBrainsMono.tar.xz" \
     "$font_sha" "$tmp/font.tar.xz"
   mkdir -p "$tmp/x"
@@ -31,12 +44,315 @@ else
   done
 fi
 
-# iTerm2 itself is installed by hand (see README): there is no pinned,
-# checksummed download for it here.
-if [ ! -d /Applications/iTerm.app ] && [ ! -d "$HOME/Applications/iTerm.app" ]; then
-  warn "iTerm2 is not installed; get it from https://iterm2.com/downloads.html"
+# -a: macOS pgrep skips its own ancestors by default, and setup usually runs
+# inside the very app it is checking. -i: Ghostty's process is "ghostty".
+is_running() { pgrep -aixq "$1"; }
+
+# --- What this machine has ---------------------------------------------
+# Tests point MISE_ME_APP_DIRS (colon-separated) at a fake Applications.
+app_dirs=${MISE_ME_APP_DIRS:-/Applications:$HOME/Applications}
+ghostty_app="" iterm_app=""
+old_ifs=$IFS
+IFS=:
+for d in $app_dirs; do
+  [ -d "$d/Ghostty.app" ] && ghostty_app="$d/Ghostty.app"
+  [ -d "$d/iTerm.app" ] && iterm_app="$d/iTerm.app"
+done
+IFS=$old_ifs
+
+# The app setup is running in. Multiplexers (herdr, tmux) set their own
+# TERM_PROGRAM; the bundle id macOS gives every app still names the terminal.
+case ${TERM_PROGRAM:-}:${__CFBundleIdentifier:-} in
+  ghostty:* | *:com.mitchellh.ghostty) current=ghostty ;;
+  iTerm.app:* | *:com.googlecode.iterm2) current=iterm2 ;;
+  Apple_Terminal:* | *:com.apple.Terminal) current=terminal-app ;;
+  *) current="" ;;
+esac
+if [ -n "$current" ]; then
+  detected=$current
+elif [ -n "$ghostty_app" ]; then
+  detected=ghostty
+elif [ -n "$iterm_app" ]; then
+  detected=iterm2
+else
+  detected=terminal-app
 fi
 
-install_file "$base/assets/iterm2-profile.json" \
-  "$HOME/Library/Application Support/iTerm2/DynamicProfiles/mise-me.json"
-log "in iTerm2: Settings > Profiles > select 'mise-me' > Other Actions > Set as Default"
+# --- Which apps to set up --------------------------------------------------
+ghostty_label="Ghostty - mise-me settings (Nerd Font + colours + Option key); Cmd-click opens links"
+[ -n "$ghostty_app" ] || ghostty_label="$ghostty_label (not installed: setup offers to download it)"
+iterm_label="iTerm2 - mise-me profile (Nerd Font + colours + Option key) as the default"
+[ -n "$iterm_app" ] || iterm_label="$iterm_label (not installed: setup offers to download it)"
+term_label="Terminal.app - mise-me profile (Nerd Font + colours + Option key) as the default"
+
+# ask PRESELECTED: prompt for the apps; prints the choice in parse_terminals form.
+ask() {
+  gum=$(gum_bin)
+  if [ -n "$gum" ]; then
+    sel=""
+    case ",$1," in *,ghostty,*) sel=$ghostty_label ;; esac
+    case ",$1," in *,iterm2,*) sel="${sel:+$sel,}$iterm_label" ;; esac
+    case ",$1," in *,terminal-app,*) sel="${sel:+$sel,}$term_label" ;; esac
+    picked=$("$gum" choose --no-limit --label-delimiter="|" --selected="$sel" \
+      --header="Which terminal apps should mise-me set up?  (x: tick/untick, enter: confirm)" \
+      "$ghostty_label|ghostty" "$iterm_label|iterm2" "$term_label|terminal-app") || die "cancelled"
+    picked=$(printf '%s' "$picked" | tr '\n' ',' | sed 's/,$//')
+    parse_terminals "${picked:-none}"
+    return
+  fi
+  # No gum: numbers, comma-separated for more than one (for example 1,3).
+  dflt=""
+  case ",$1," in *,ghostty,*) dflt=1 ;; esac
+  case ",$1," in *,iterm2,*) dflt="${dflt:+$dflt,}2" ;; esac
+  case ",$1," in *,terminal-app,*) dflt="${dflt:+$dflt,}3" ;; esac
+  [ "$dflt" != 1,2,3 ] || dflt=4
+  while :; do
+    printf '\nWhich terminal apps should mise-me set up?\n  1) %s\n  2) %s\n  3) %s\n  4) All three\n  5) None\nChoose (comma-separated for several) [%s]: ' \
+      "$ghostty_label" "$iterm_label" "$term_label" "${dflt:-5}" >&2
+    read -r answer || die "cancelled"
+    apps=""
+    for n in $(printf '%s' "${answer:-${dflt:-5}}" | tr ', ' '  '); do
+      case $n in
+        1) apps="$apps,ghostty" ;;
+        2) apps="$apps,iterm2" ;;
+        3) apps="$apps,terminal-app" ;;
+        4) apps="$apps,all" ;;
+        5) echo none; return ;;
+        *) apps=bad ;;
+      esac
+    done
+    if [ -n "$apps" ] && [ "$apps" != bad ]; then
+      parse_terminals "${apps#,}"
+      return
+    fi
+    printf 'Please answer with numbers from 1 to 5.\n' >&2
+  done
+}
+
+saved_file="$(mise_me_state)/terminals"
+saved=""
+if [ -s "$saved_file" ]; then
+  saved=$(parse_terminals "$(cat "$saved_file")" 2>/dev/null) || saved=""
+fi
+want=""
+[ -z "${MISE_ME_TERMINALS:-}" ] || want=$(parse_terminals "$MISE_ME_TERMINALS")
+
+save=""
+if [ -n "$want" ] && [ "$want" != ask ]; then
+  choice=$want save=1
+elif [ -z "$want" ] && [ -n "$saved" ]; then
+  choice=$saved
+  log "terminal apps: $choice (saved choice; change it with --terminal ask)"
+elif interactive; then
+  choice=$(ask "${saved:-$detected}") save=1
+else
+  # Nobody to ask (CI, piped): use the detected app without saving it, so a
+  # later interactive run still asks.
+  choice=$detected
+  log "terminal apps: $choice (detected; choose with --terminal)"
+fi
+if [ -n "$save" ]; then
+  mkdir -p "$(mise_me_state)"
+  printf '%s\n' "$choice" > "$saved_file.tmp"
+  mv "$saved_file.tmp" "$saved_file"
+fi
+
+# --- Downloading an app ------------------------------------------------------
+# Pinned releases with their SHA-256 (the same ones Homebrew's casks pin).
+# The apps update themselves afterwards.
+ghostty_version=1.4.0
+ghostty_sha=3a02075dbd24318d778426af41dee5507d53ecc4578ede96912ec9ce6d18d3e8
+iterm_version=3.7.6
+iterm_sha=bb6102e9f57bbe41979ba7c7b1c25d4112e9a5c2142606eeccbe18dc7ee0706f
+
+# app_dest: /Applications when this account may write there, else
+# ~/Applications. Tests (MISE_ME_APP_DIRS) get the first folder they named.
+app_dest() {
+  if [ -n "${MISE_ME_APP_DIRS:-}" ]; then
+    printf '%s' "${MISE_ME_APP_DIRS%%:*}"
+  elif [ -w /Applications ]; then
+    printf /Applications
+  else
+    printf '%s/Applications' "$HOME"
+  fi
+}
+
+# offer_install APP VERSION SIZE: true when APP should be downloaded now.
+offer_install() {
+  case ${MISE_ME_INSTALL_APPS:-ask} in
+    yes) return 0 ;;
+    no) return 1 ;;
+  esac
+  interactive || return 1
+  confirm "$1 is not installed. Download $1 $2 (about $3) into $(app_dest)?"
+}
+
+# place_app SRC: copy an .app bundle into app_dest; prints where it went.
+place_app() {
+  _pa_dest="$(app_dest)/$(basename "$1")"
+  mkdir -p "$(app_dest)"
+  ditto "$1" "$_pa_dest" || die "could not copy $(basename "$1") into $(app_dest)"
+  printf '%s' "$_pa_dest"
+}
+
+install_ghostty() {
+  log "downloading Ghostty $ghostty_version"
+  fetch "https://release.files.ghostty.org/$ghostty_version/Ghostty.dmg" "$ghostty_sha" "$tmp/Ghostty.dmg"
+  mkdir -p "$tmp/mnt"
+  hdiutil attach -nobrowse -readonly -quiet -mountpoint "$tmp/mnt" "$tmp/Ghostty.dmg" ||
+    die "could not open the Ghostty disk image"
+  [ -d "$tmp/mnt/Ghostty.app" ] || die "Ghostty.app not found in the disk image"
+  ghostty_app=$(place_app "$tmp/mnt/Ghostty.app")
+  # Detached and gone, so the exit trap has nothing left to detach.
+  hdiutil detach -quiet "$tmp/mnt" || warn "could not detach the Ghostty disk image (it is still mounted at $tmp/mnt)"
+  rmdir "$tmp/mnt" 2>/dev/null || true
+  log "installed $ghostty_app"
+}
+
+install_iterm2() {
+  log "downloading iTerm2 $iterm_version"
+  fetch "https://iterm2.com/downloads/stable/iTerm2-$(printf '%s' "$iterm_version" | tr . _).zip" \
+    "$iterm_sha" "$tmp/iTerm2.zip"
+  mkdir -p "$tmp/iterm"
+  ditto -xk "$tmp/iTerm2.zip" "$tmp/iterm" || die "could not unpack iTerm2"
+  [ -d "$tmp/iterm/iTerm.app" ] || die "iTerm.app not found in the download"
+  iterm_app=$(place_app "$tmp/iterm/iTerm.app")
+  log "installed $iterm_app"
+}
+
+# --- Ghostty -------------------------------------------------------------------
+# Ghostty has no profiles: one config file is the whole setup. It reads it at
+# start and on Cmd+Shift+, so writing it never fights a running app.
+setup_ghostty() {
+  if [ -z "$ghostty_app" ] && offer_install Ghostty "$ghostty_version" "35 MB"; then
+    install_ghostty
+  fi
+  cfg="$(config_home)/ghostty/config"
+  unchanged=""
+  ! cmp -s "$base/assets/ghostty-config" "$cfg" || unchanged=1
+  install_file "$base/assets/ghostty-config" "$cfg"
+  if [ -z "$ghostty_app" ]; then
+    next_step "Install Ghostty: it picks up the mise-me settings when it first opens" \
+      "Download it from https://ghostty.org/download, or run setup again and answer yes" \
+      '$ ./bin/mise run setup'
+  elif [ -n "$unchanged" ]; then
+    log "Ghostty already uses the mise-me settings"
+  elif is_running ghostty; then
+    next_step "Ghostty: reload its settings" \
+      "Press Cmd+Shift+, in Ghostty (or quit and reopen it)"
+  else
+    log "Ghostty will use the mise-me settings when it opens"
+  fi
+}
+
+# --- iTerm2 ----------------------------------------------------------------
+setup_iterm2() {
+  if [ -z "$iterm_app" ] && offer_install iTerm2 "$iterm_version" "60 MB"; then
+    install_iterm2
+  fi
+  install_file "$base/assets/iterm2-profile.json" \
+    "$HOME/Library/Application Support/iTerm2/DynamicProfiles/mise-me.json"
+  guid=mise-me-profile   # "Guid" in assets/iterm2-profile.json
+  if [ -z "$iterm_app" ]; then
+    next_step "Install iTerm2, then run setup again to make mise-me its default profile" \
+      "Download it from https://iterm2.com/downloads.html, or run setup again and answer yes" \
+      '$ ./bin/mise run setup'
+  elif [ "$(defaults read com.googlecode.iterm2 "Default Bookmark Guid" 2>/dev/null)" = "$guid" ]; then
+    log "iTerm2 already uses the mise-me profile by default"
+  elif is_running iTerm2 || ! defaults read com.googlecode.iterm2 "New Bookmarks" >/dev/null 2>&1; then
+    # A running iTerm2 writes its settings back over ours, and one that has
+    # never been opened has no settings to add to yet.
+    next_step "iTerm2: make mise-me the default profile" \
+      "Open iTerm2, then Settings > Profiles > mise-me > Other Actions > Set as Default"
+  else
+    backup_defaults com.googlecode.iterm2
+    defaults write com.googlecode.iterm2 "Default Bookmark Guid" -string "$guid"
+    log "iTerm2 now opens with the mise-me profile"
+  fi
+}
+
+# --- Terminal.app ----------------------------------------------------------
+# Tests set MISE_ME_TERMINAL_DOMAIN to use a throwaway settings domain.
+setup_terminal_app() {
+  domain=${MISE_ME_TERMINAL_DOMAIN:-com.apple.Terminal}
+  js="$base/assets/terminal-app.js"
+  profile_file="$(mise_me_state)/mise-me.terminal"
+  # import_step WHY: hand the profile over as a file to open by hand.
+  import_step() {
+    mkdir -p "$(mise_me_state)"
+    if osascript -l JavaScript "$js" export "$profile_file" "$font_name" >/dev/null 2>&1; then
+      next_step "Terminal.app: $1" \
+        "\$ open $profile_file" \
+        "Then Settings > Profiles > mise-me > Default"
+    else
+      next_step "Terminal.app: $1" \
+        "Quit Terminal.app and run setup again from another terminal app"
+    fi
+  }
+  if ! status=$(osascript -l JavaScript "$js" status "$domain" "$font_name" 2>/dev/null); then
+    warn "could not read Terminal.app's settings"
+    import_step "add the mise-me profile and make it the default"
+    return 0
+  fi
+  current=$(printf '%s' "$status" | cut -f1)
+  state=$(printf '%s' "$status" | cut -f2)
+  if [ "$state" = current ] && [ "$current" = mise-me ]; then
+    log "Terminal.app already uses the mise-me profile by default"
+    return 0
+  fi
+
+  if ! is_running Terminal; then
+    # Closed: safe to write its settings directly.
+    if backup_defaults "$domain" && osascript -l JavaScript "$js" apply "$domain" "$font_name" >/dev/null; then
+      log "Terminal.app now opens with the mise-me profile (was: $current)"
+    else
+      warn "could not update Terminal.app's settings"
+      import_step "add the mise-me profile and make it the default"
+    fi
+    return 0
+  fi
+
+  # Running: it would write its settings back over a direct change. It
+  # imports a profile file that is opened (in a new window), and AppleScript
+  # can pick the default, so do it that way. An outdated profile is not
+  # re-imported: that would add a second copy next to the old one.
+  if [ "$state" = outdated ]; then
+    next_step "Terminal.app: update the mise-me profile" \
+      "Quit Terminal.app and run setup again from another terminal app," \
+      "or delete it (Settings > Profiles > mise-me > -) and run setup again."
+    return 0
+  fi
+  backup_defaults "$domain" || true
+  if [ "$state" = missing ]; then
+    mkdir -p "$(mise_me_state)"
+    if ! osascript -l JavaScript "$js" export "$profile_file" "$font_name" >/dev/null 2>&1 ||
+      ! open "$profile_file" 2>/dev/null; then
+      warn "could not add the mise-me profile to Terminal.app"
+      import_step "add the mise-me profile and make it the default"
+      return 0
+    fi
+    log "Terminal.app: added the mise-me profile (it opened a window with it)"
+  fi
+  # The import finishes in the background, so allow it a few seconds.
+  tries=0
+  until osascript -e 'tell application "Terminal" to set default settings to settings set "mise-me"' \
+    -e 'tell application "Terminal" to set startup settings to settings set "mise-me"' >/dev/null 2>&1; do
+    tries=$((tries + 1))
+    if [ "$tries" -ge 10 ]; then
+      next_step "Terminal.app: make mise-me the default profile" \
+        "Settings > Profiles > mise-me > Default"
+      return 0
+    fi
+    sleep 0.5
+  done
+  log "Terminal.app now opens with the mise-me profile (was: $current)"
+}
+
+case $choice in
+  none) log "not setting up any terminal app (change it with --terminal)" ;;
+  *)
+    case ",$choice," in *,ghostty,*) setup_ghostty ;; esac
+    case ",$choice," in *,iterm2,*) setup_iterm2 ;; esac
+    case ",$choice," in *,terminal-app,*) setup_terminal_app ;; esac
+    ;;
+esac

@@ -1,0 +1,41 @@
+# Ghostty settings managed by mise-me. Put anything personal in a file called
+# "local" next to this one; it is loaded last and mise-me never touches it.
+# Reload with Cmd+Shift+, after a change.
+
+font-family = "JetBrainsMono Nerd Font"
+font-size = 18
+
+# Gruvbox Material (dark, medium) for the ANSI colours; near-white text on a
+# translucent dark navy, the same as the iTerm2 and Terminal.app profiles.
+background = #212734
+background-opacity = 0.95
+background-blur = 10
+foreground = #e6e6e6
+bold-color = #f0f0f0
+cursor-color = #e6e6e6
+cursor-text = #212734
+selection-background = #334e5e
+selection-foreground = #e6e6e6
+palette = 0=#5a524c
+palette = 1=#ea6962
+palette = 2=#a9b665
+palette = 3=#d8a657
+palette = 4=#7daea3
+palette = 5=#d3869b
+palette = 6=#89b482
+palette = 7=#dee5eb
+palette = 8=#5a524c
+palette = 9=#ea6962
+palette = 10=#a9b665
+palette = 11=#d8a657
+palette = 12=#7daea3
+palette = 13=#d3869b
+palette = 14=#89b482
+palette = 15=#e5eff5
+
+# Option works as Alt (word shortcuts), as in the other two profiles.
+macos-option-as-alt = true
+window-width = 135
+window-height = 29
+
+config-file = ?local

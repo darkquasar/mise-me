@@ -3,6 +3,8 @@
 #USAGE arg "[base]" help="Base to set up (see `mise run list`). Omit it to re-apply what this machine has."
 #USAGE flag "--with <extensions>" help="Comma-separated extensions, for example: agents. --with '' removes all."
 #USAGE flag "--switch" help="Allow replacing the base this machine already has"
+#USAGE flag "--terminal <apps>" help="macOS: terminal apps to set up: ghostty, iterm2, terminal-app (comma-separated), all, none, or ask. Default: the saved choice, else ask (or detect when nobody can answer)."
+#USAGE flag "--prompt <theme>" help="Prompt colour theme: pixel-gem, tokyo-night, catppuccin-latte, catppuccin-frappe, catppuccin-macchiato or catppuccin-mocha. Default: the saved choice, else pixel-gem."
 #
 # Phases: 1 plan (validate everything, no changes), 2 reconcile (move aside
 # extension files no longer wanted), 3 the base's own setup, 4 extensions and
@@ -64,6 +66,18 @@ if [ -n "$with" ]; then
   done < "$plan/with"
 fi
 
+# --terminal is passed down to the base as MISE_ME_TERMINALS (checked here so
+# a typo stops setup before any change).
+if [ -n "${usage_terminal+set}" ]; then
+  MISE_ME_TERMINALS=$(parse_terminals "$usage_terminal")
+  export MISE_ME_TERMINALS
+fi
+# --prompt likewise, as MISE_ME_PROMPT.
+if [ -n "${usage_prompt+set}" ]; then
+  MISE_ME_PROMPT=$(parse_prompt "$usage_prompt")
+  export MISE_ME_PROMPT
+fi
+
 # Every destination an extension writes must be its own: not a file the base
 # ships, and not a file another selected extension ships.
 tree_dests "$root/bases/$base/home" "$plan/base.dests"
@@ -99,6 +113,7 @@ for ext in $exts; do
 done
 
 # --- 3. The base: it runs its own setup from its own folder ---------------
+next_steps_reset
 log "base: $base"
 (cd "$root/bases/$base" && MISE_ME_ROUTED=1 "$MISE" run setup)
 
@@ -106,9 +121,12 @@ log "base: $base"
 for ext in $exts; do
   log "extension: $ext"
   install_tree "$(ext_dir "$ext")/home"
+  ext_step=$(toml_value "$(ext_dir "$ext")/ext.toml" next_step)
+  [ -z "$ext_step" ] || next_step "$ext_step"
 done
 [ -z "$exts" ] || step_tools
 
 # --- 5. Record what this machine now has, so `setup` alone re-applies it --
 write_applied "$base" "$(printf '%s' "$exts" | tr ' ' ',')"
 log "this machine now has base '$base'${exts:+ with $(printf '%s' "$exts" | tr ' ' ',')}"
+next_steps_show

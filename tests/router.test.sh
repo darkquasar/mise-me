@@ -164,3 +164,25 @@ check "agents: claude and codex live in the agents extension, not in core" \
   '! grep -qE "^(claude|codex) " "$repo/bases/core/home/.config/mise/config.toml" && grep -qE "^claude " "$repo/extensions/agents/home/.config/mise/conf.d/agents.toml" && grep -qE "^codex " "$repo/extensions/agents/home/.config/mise/conf.d/agents.toml"'
 check "core: iTerm2 is not installed automatically (unpinned download)" \
   '! grep -q "brew install" "$repo/bases/core/mise-tasks/terminal"'
+
+# --- --terminal and next steps -------------------------------------------------
+fresh_home badterm
+run MISE_INSTALL_PATH="$stub/fake-mise" usage_base=alpha usage_terminal=konsole sh "$fix/mise-tasks/setup" >/dev/null 2>&1; rc=$?
+check "setup: an unknown --terminal stops before any change" '[ "$rc" -ne 0 ] && untouched'
+
+fresh_home badprompt
+run MISE_INSTALL_PATH="$stub/fake-mise" usage_base=alpha usage_prompt=neon sh "$fix/mise-tasks/setup" >/dev/null 2>&1; rc=$?
+check "setup: an unknown --prompt stops before any change" '[ "$rc" -ne 0 ] && untouched'
+# The template base's setup is a fake that only logs; the env it gets is what
+# core's prompt step would read.
+printf 'printf "%%s\\n" "prompt=${MISE_ME_PROMPT:-}" > "$HOME/.env-seen"\n' >> "$fix/bases/alpha/mise-tasks/setup"
+fresh_home promptpass
+run MISE_INSTALL_PATH="$stub/fake-mise" usage_base=alpha usage_prompt=catppuccin-mocha sh "$fix/mise-tasks/setup" >/dev/null 2>&1; rc=$?
+check "setup: --prompt reaches the base as MISE_ME_PROMPT" \
+  '[ "$rc" -eq 0 ] && [ "$(cat "$H/.env-seen")" = prompt=catppuccin-mocha ]'
+
+printf 'next_step = "Sign in to the test tool"\n' >> "$fix/bases/alpha/extensions/extra/ext.toml"
+fresh_home nextsteps
+out=$(route alpha extra 2>&1)
+check "setup: an extension's next_step is shown once, after everything else" \
+  'printf "%s\n" "$out" | tail -n 5 | grep -q "Sign in to the test tool" && [ ! -e "$H/.local/state/mise-me/next-steps" ]'

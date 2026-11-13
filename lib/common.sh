@@ -60,6 +60,17 @@ move_aside() {
   log "backed up $_ma_target to $_ma_slot/$_ma_rel"
 }
 
+# backup_defaults DOMAIN: macOS. Save a copy of an app's settings (such as
+# com.apple.Terminal) into its own folder under the backups, before changing
+# them in place. Restore with: defaults import DOMAIN FILE
+backup_defaults() {
+  _bd_root="$(mise_me_state)/backups"
+  mkdir -p "$_bd_root"
+  _bd_slot=$(mktemp -d "$_bd_root/$(date +%Y%m%d-%H%M%S).XXXXXX")
+  defaults export "$1" "$_bd_slot/$1.plist" || die "could not back up the settings of $1"
+  log "backed up $1 settings to $_bd_slot/$1.plist"
+}
+
 # install_file SRC DEST: copy SRC to DEST unless DEST already has the same
 # content. Anything else at DEST is moved aside first, never overwritten.
 install_file() {
@@ -126,16 +137,20 @@ write_applied() {
 # base_begin NAME / base_end NAME: called by every base's setup. When a base
 # runs on its own (not through the router), refuse if this machine has a
 # different base, and record the base on a machine that has none yet.
+# Run on its own, a base also collects and shows its own next steps; under
+# the router, the router does that once everything (extensions too) is done.
 base_begin() {
   [ -z "${MISE_ME_ROUTED:-}" ] || return 0
   _bb=$(recorded_base)
   if [ -n "$_bb" ] && [ "$_bb" != "$1" ]; then
     die "this machine has base '$_bb'; to replace it run: ./bin/mise run setup $1 --switch"
   fi
+  next_steps_reset
 }
 base_end() {
   [ -z "${MISE_ME_ROUTED:-}" ] || return 0
   [ -n "$(recorded_base)" ] || write_applied "$1" ""
+  next_steps_show
 }
 
 # Values from small TOML files (base.toml, ext.toml). Only one-line entries
@@ -171,6 +186,139 @@ fetch() {
   fi
 }
 
+# --- Talking to the person running setup ---------------------------------
+
+# interactive: true when someone can answer a prompt (not CI, not piped).
+interactive() { [ -t 0 ] && [ -t 2 ] && [ -z "${CI:-}" ]; }
+
+# gum_bin: print the path of gum (installed through mise) if there is one.
+# Callers fall back to plain prompts and text when it prints nothing.
+gum_bin() {
+  _gb=$(cd "$HOME" && "$MISE" which gum 2>/dev/null) || _gb=""
+  if [ -z "$_gb" ] || [ ! -x "$_gb" ]; then
+    _gb=$(command -v gum 2>/dev/null) || _gb=""
+  fi
+  printf '%s' "$_gb"
+}
+
+# confirm QUESTION: ask a yes/no question (gum when there is one). True for yes.
+# Callers check `interactive` first; with nobody to answer this returns false.
+confirm() {
+  interactive || return 1
+  _c_gum=$(gum_bin)
+  if [ -n "$_c_gum" ]; then
+    "$_c_gum" confirm "$1"
+    return
+  fi
+  printf '\n%s [y/N] ' "$1" >&2
+  read -r _c_answer || return 1
+  case $_c_answer in [yY] | [yY][eE][sS]) return 0 ;; esac
+  return 1
+}
+
+# parse_terminals VALUE: check a --terminal value and print it normalised:
+# "ask", "none", or ghostty, iterm2 and/or terminal-app, comma-separated,
+# in that order. "all" is all three; "both" is iTerm2 and Terminal.app.
+terminals_usage="--terminal needs a value: ghostty, iterm2, terminal-app (comma-separated), all, none or ask"
+parse_terminals() {
+  case $1 in
+    ask | none) printf '%s' "$1"; return 0 ;;
+    '') die "$terminals_usage" ;;
+  esac
+  _pt_g="" _pt_i="" _pt_t=""
+  for _pt in $(printf '%s' "$1" | tr ',' ' '); do
+    case $_pt in
+      ghostty) _pt_g=ghostty ;;
+      iterm2 | iterm) _pt_i=iterm2 ;;
+      terminal-app | terminal) _pt_t=terminal-app ;;
+      both) _pt_i=iterm2 _pt_t=terminal-app ;;
+      all) _pt_g=ghostty _pt_i=iterm2 _pt_t=terminal-app ;;
+      *) die "unknown terminal '$_pt' in --terminal (use ghostty, iterm2, terminal-app, all, none or ask)" ;;
+    esac
+  done
+  [ -n "$_pt_g$_pt_i$_pt_t" ] || die "$terminals_usage"
+  _pt_out=""
+  for _pt in $_pt_g $_pt_i $_pt_t; do _pt_out="${_pt_out:+$_pt_out,}$_pt"; done
+  printf '%s' "$_pt_out"
+}
+
+# parse_prompt VALUE: check a --prompt value (a colour theme for the starship
+# prompt, see bases/core/mise-tasks/prompt) and print it. pixel-gem is the
+# default; tokyo-night is starship's preset of that name; the catppuccin ones
+# are the four flavours of its powerline preset.
+prompt_themes="pixel-gem tokyo-night catppuccin-latte catppuccin-frappe catppuccin-macchiato catppuccin-mocha"
+parse_prompt() {
+  case " $prompt_themes " in
+    *" $1 "*) [ -n "$1" ] ;;
+    *) false ;;
+  esac || die "unknown prompt theme '$1' (use one of: $(printf '%s' "$prompt_themes" | tr ' ' ','))"
+  printf '%s' "$1"
+}
+
+# --- The "next steps" message shown when setup finishes -------------------
+# Steps are collected in a file while setup runs (tasks run as separate
+# processes), shown once at the end, then deleted.
+
+next_steps_file() { printf '%s/next-steps' "$(mise_me_state)"; }
+next_steps_reset() { mkdir -p "$(mise_me_state)"; : > "$(next_steps_file)"; }
+
+# next_step TITLE [LINE...]: add a numbered step. A LINE starting with "$ "
+# is a command to run; any other LINE is an explanation. Repeats are ignored.
+next_step() {
+  mkdir -p "$(mise_me_state)"
+  _ns_f=$(next_steps_file)
+  if [ -f "$_ns_f" ] && grep -Fxq -- "$(printf 'S\t%s' "$1")" "$_ns_f"; then
+    return 0
+  fi
+  {
+    printf 'S\t%s\n' "$1"
+    shift
+    for _ns_line in "$@"; do printf 'D\t%s\n' "$_ns_line"; done
+  } >> "$_ns_f"
+}
+
+# next_note TEXT: an unnumbered line shown under the steps.
+next_note() {
+  mkdir -p "$(mise_me_state)"
+  _nn_f=$(next_steps_file)
+  if [ -f "$_nn_f" ] && grep -Fxq -- "$(printf 'N\t%s' "$1")" "$_nn_f"; then
+    return 0
+  fi
+  printf 'N\t%s\n' "$1" >> "$_nn_f"
+}
+
+# next_steps_show: print the collected steps (in a gum box when possible),
+# then delete them.
+next_steps_show() {
+  _nss_f=$(next_steps_file)
+  [ -s "$_nss_f" ] || { rm -f "$_nss_f"; return 0; }
+  _nss_colour=""
+  if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then _nss_colour=1; fi
+  _nss_body=$(awk -v colour="$_nss_colour" '
+    BEGIN {
+      FS = "\t"
+      if (colour) { num = "\033[36m"; cmd = "\033[32m"; dim = "\033[2m"; off = "\033[0m" }
+    }
+    $1 == "S" { if (n++) print ""; printf "%s%d.%s %s\n", num, n, off, $2 }
+    $1 == "D" {
+      if (substr($2, 1, 2) == "$ ") printf "   %s%s%s\n", cmd, $2, off
+      else printf "   %s%s%s\n", dim, $2, off
+    }
+    $1 == "N" { notes = notes "\n" dim $2 off }
+    END { if (notes != "") printf "%s\n", notes }
+  ' "$_nss_f")
+  rm -f "$_nss_f"
+  _nss_gum=""
+  [ -z "$_nss_colour" ] || _nss_gum=$(gum_bin)
+  printf '\n'
+  if [ -n "$_nss_gum" ] &&
+    "$_nss_gum" style --border rounded --border-foreground 6 --padding "1 2" \
+      "$(printf '\033[36mNext steps\033[0m\n\n%s' "$_nss_body")" 2>/dev/null; then
+    return 0
+  fi
+  printf '%s\n\n%s\n' "== Next steps ==========================================" "$_nss_body"
+}
+
 # --- Steps shared by every base ------------------------------------------
 
 # step_self: make mise a permanent command at ~/.local/bin/mise.
@@ -189,13 +337,37 @@ step_self() {
 # step_tools: install every tool in the global mise config and its conf.d.
 # Retries once: some installers (rustup) download without retrying, so one
 # dropped connection would otherwise fail the whole setup.
+#
+# It runs the permanent mise, not the one ./bin/mise downloaded: shims link to
+# the mise that made them, and the downloaded one has a versioned name
+# (bootstrap/mise-VERSION) that mise later refuses to manage ("not replacing
+# unmanaged file in shims directory") and that a newer bin/mise stops using.
 step_tools() {
+  _st_mise=$MISE
+  if [ -x "$HOME/.local/bin/mise" ]; then
+    _st_mise=$HOME/.local/bin/mise
+  elif _st_found=$(command -v mise 2>/dev/null); then
+    _st_mise=$_st_found
+  fi
   (
     cd "$HOME"
-    if ! "$MISE" install --yes; then
+    if ! "$_st_mise" install --yes; then
       warn "some tools failed to install; retrying once"
-      "$MISE" install --yes
+      "$_st_mise" install --yes
     fi
-    "$MISE" ls --global
+    # Shims an earlier setup made with the downloaded mise: replace them.
+    _st_shims="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims"
+    _st_old=""
+    for _st_s in "$_st_shims"/*; do
+      [ -L "$_st_s" ] || continue
+      case $(readlink "$_st_s") in
+        */bootstrap/mise-*) rm -f "$_st_s"; _st_old=1 ;;
+      esac
+    done
+    if [ -n "$_st_old" ]; then
+      "$_st_mise" reshim
+      log "rebuilt mise shims that pointed at the downloaded mise"
+    fi
+    "$_st_mise" ls --global
   )
 }

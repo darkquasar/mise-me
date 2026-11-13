@@ -1,3 +1,4 @@
 # Coding agent CLIs. Each one signs in on first run; no credentials are shipped.
 description = "claude and codex CLIs (latest)"
 works_with = ["core"]
+next_step = "Sign in to claude and codex: run each once and follow its prompts"

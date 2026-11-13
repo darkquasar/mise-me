@@ -13,6 +13,7 @@ check() { if eval "$2"; then ok "$1"; else no "$1"; fi; }
 
 # Real plugin tarballs, fetched once, so checksum verification runs for real.
 for url in \
+  https://github.com/Aloxaf/fzf-tab/archive/refs/tags/v1.3.0.tar.gz \
   https://github.com/zsh-users/zsh-autosuggestions/archive/refs/tags/v0.7.1.tar.gz \
   https://github.com/zsh-users/zsh-syntax-highlighting/archive/refs/tags/0.8.0.tar.gz; do
   name=$(printf '%s' "$url" | sed 's#https://github.com/##; s#/#_#g')
@@ -22,7 +23,8 @@ done
 stub="$work/stub"
 mkdir -p "$stub"
 
-# Fake curl: supports `curl ... -o FILE URL`; CURL_FAIL=1 makes it fail like a 403.
+# Fake curl: supports `curl ... -o FILE URL`; CURL_FAIL=1 makes it fail like a
+# 403. Files are served from the cache, or from FAKE_CURL_DIR (same naming).
 cat > "$stub/curl" <<EOF
 #!/bin/sh
 [ "\${CURL_FAIL:-0}" = 1 ] && { echo "curl: (22) 403" >&2; exit 22; }
@@ -31,8 +33,10 @@ while [ \$# -gt 0 ]; do
   case \$1 in -o) out=\$2; shift 2 ;; -*) shift ;; *) url=\$1; shift ;; esac
 done
 name=\$(printf '%s' "\$url" | sed 's#https://github.com/##; s#/#_#g')
-[ -f "$cache/\$name" ] || { echo "curl: (22) not cached: \$url" >&2; exit 22; }
-if [ -n "\$out" ]; then cp "$cache/\$name" "\$out"; else cat "$cache/\$name"; fi
+src="$cache/\$name"
+[ -f "\$src" ] || src="\${FAKE_CURL_DIR:-/nonexistent}/\$name"
+[ -f "\$src" ] || { echo "curl: (22) not cached: \$url" >&2; exit 22; }
+if [ -n "\$out" ]; then cp "\$src" "\$out"; else cat "\$src"; fi
 EOF
 
 # Fake mise: logs every call; `run TASK` executes ./mise-tasks/TASK like mise

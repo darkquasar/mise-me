@@ -7,16 +7,21 @@ or a machine: no git identity, no credentials, no hostnames, no machine paths.
 
 ## Set up the core base (step by step)
 
-`core` gives you zsh, the starship gruvbox-rainbow prompt, herdr, Docker Sandboxes
-(`sbx`), patronus and everyday CLI tools (eza, bat, zoxide, fzf, ripgrep, jq, gh,
-node, go, rust, uv, pixi, deno). On macOS it also installs the JetBrainsMono Nerd
-Font and an iTerm2 profile.
+`core` gives you zsh, a starship powerline prompt (pixel-gem by default, or
+Tokyo Night or a [Catppuccin](https://catppuccin.com) flavour, see [Prompt themes](#prompt-themes)),
+herdr, patronus and everyday CLI tools (eza, bat, zoxide, fzf, fd, atuin, ripgrep, jq, gh, node, go,
+rust, uv, pixi, deno). On macOS it also installs Docker Sandboxes (`sbx`), the
+JetBrainsMono Nerd Font, and sets up Ghostty, iTerm2 and/or Terminal.app (it asks
+which, and offers to download Ghostty or iTerm2 if you pick one that is missing).
+The same base works on a Linux machine with no display, such as a VM you reach
+over SSH: see [Headless Linux](#headless-linux-a-server-or-vm-over-ssh).
 
 1. **Check the machine.** macOS on Apple silicon, or Linux (x86_64 or arm64), with
    `bash`, `curl`, `tar` and `zsh`. macOS has all four. On Ubuntu:
-   `sudo apt install zsh curl`. On macOS, also install
-   [iTerm2](https://iterm2.com/downloads.html) yourself; setup adds its profile
-   and font but does not download the app.
+   `sudo apt install zsh curl` (setup stops and prints this command if something
+   is missing). No terminal app to install first: Terminal.app is
+   already there, and setup can download [Ghostty](https://ghostty.org) or
+   [iTerm2](https://iterm2.com) for you (it asks before downloading anything).
 2. **Get the repo.**
    ```sh
    git clone <this repo> mise-me
@@ -28,16 +33,18 @@ Font and an iTerm2 profile.
    ```
    You do not need mise installed: `./bin/mise` is a small script that downloads
    a pinned mise release, checks its checksum and runs it.
-4. **Open the new shell.**
-   ```sh
-   exec zsh
-   ```
-5. **Finish the personal bits** (deliberately not automated):
-   - `git config --global user.name "..."` and `user.email`
-   - `sbx login`
-   - sign in to claude and codex on first run (if you added `agents`)
-   - iTerm2: Settings > Profiles > `mise-me` > Other Actions > Set as Default
-   - anything else personal goes in `~/.zshrc.local`, which mise-me never touches
+4. **Pick your terminal apps** (macOS). Setup asks which of Ghostty, iTerm2 and
+   Terminal.app to configure and remembers the answer. If you pick an app that is
+   not installed, it asks whether to download it. See [Terminal apps](#terminal-apps-macos).
+5. **Follow the "Next steps" box** that setup prints at the end. It lists only
+   what is still left on this machine, for example:
+   - `exec zsh` to load the new shell
+   - `git config --global user.name` / `user.email` (if not set yet)
+   - `sbx login` (macOS), and signing in to claude and codex (if you added `agents`)
+   - `chsh` to make zsh your login shell, if it is not already (Linux, usually)
+   - any terminal setting setup could not change while the app was open
+
+   Anything else personal goes in `~/.zshrc.local`, which mise-me never touches.
 
 Run `./bin/mise run setup` again at any time: it re-applies whatever this machine
 has and changes nothing that is already right.
@@ -69,7 +76,7 @@ mise-me/
       base.toml         one-line description
       mise-tasks/       its steps: setup (entry point), prompt, zsh-plugins, terminal
       home/             files copied into $HOME (.zshrc, mise tools, herdr config)
-      assets/           iTerm2 profile
+      assets/           Ghostty config, iTerm2 profile, Terminal.app settings helper
       tests/            tests for this base
       extensions/       extensions only this base can use (none yet)
     _template/          starting point for new bases
@@ -95,8 +102,10 @@ mise-me/
   files no longer wanted to backups. Setup tracks which extension owns which
   file under `~/.local/state/mise-me/files/`.
 - **Nothing is overwritten.** Any file that would be replaced is moved to
-  `~/.local/state/mise-me/backups/` first. Downloads (zsh plugins, font) are pinned
-  and checked against a SHA-256.
+  `~/.local/state/mise-me/backups/` first. App settings changed in place (Terminal.app,
+  iTerm2) are exported there first too; restore with `defaults import <domain> <file>`. Downloads (zsh plugins, font, Ghostty,
+  iTerm2) are pinned and checked against a SHA-256, and an app is only
+  downloaded after you say yes.
 - **Shared extensions say which bases they support** (`works_with` in `ext.toml`).
   Extensions inside a base's own `extensions/` folder are private to it.
 
@@ -110,10 +119,137 @@ mise-me/
 | `./bin/mise run setup core` | Core only (removes agents if it was there) |
 | `./bin/mise run setup --with ''` | Keep the base, remove all extensions |
 | `./bin/mise run setup <base> --switch` | Replace this machine's base |
+| `./bin/mise run setup --terminal ask` | Choose the terminal apps again (macOS) |
+| `./bin/mise run setup --terminal all` | Choose without a prompt: `ghostty`, `iterm2`, `terminal-app` (comma-separated), `all` or `none` |
+| `./bin/mise run setup --prompt tokyo-night` | Switch the prompt's colours: `pixel-gem` (default), `tokyo-night`, `catppuccin-latte`, `catppuccin-frappe`, `catppuccin-macchiato` or `catppuccin-mocha` |
 | `./bin/mise run new-base <name>` | Create a new base from `bases/_template` |
 | `cd bases/core && mise run setup` | Run a base on its own (no extensions) |
 | `cd bases/core && mise run prompt` | Re-run a single step of a base |
 | `sh tests/run.sh` | Run the regression tests (see below) |
+
+## Terminal apps (macOS)
+
+The first time setup runs on a Mac it asks which terminal apps to configure
+(a [gum](https://github.com/charmbracelet/gum) menu, or a numbered question if gum
+is missing), with the app you are running in already ticked. The answer is saved
+in `~/.local/state/mise-me/terminals` and reused by later runs. With nobody to
+answer (CI, piped input) it uses the app setup runs in and saves nothing.
+
+If you pick Ghostty or iTerm2 and it is not in `/Applications` (or
+`~/Applications`), setup asks whether to download it: a pinned release, checked
+against its SHA-256, copied into `/Applications`. Say no and it still writes
+the settings, lists the install in "Next steps", and asks again next run.
+`MISE_ME_INSTALL_APPS=yes` (or `no`) answers for you, for scripted runs.
+
+| | Ghostty | iTerm2 | Terminal.app |
+| --- | --- | --- | --- |
+| Font | JetBrainsMono Nerd Font 18 | JetBrainsMono Nerd Font 18 | JetBrainsMono Nerd Font 18 |
+| Option key | works as Alt (word shortcuts) | sends Esc+ (word shortcuts work) | "Use Option as Meta key" turned on |
+| Colours | Gruvbox Material on a translucent dark navy | same | same |
+| Where | `~/.config/ghostty/config` | mise-me profile, made the default | mise-me profile, made the default |
+| Links | Cmd-click opens them | Cmd-click opens them | - |
+
+iTerm2 and Terminal.app get a profile called mise-me; your other profiles are
+left alone, so switching back is a matter of picking one of them as the default
+again. Ghostty has no profiles: its settings are one plain-text file, which
+mise-me writes (backing up whatever was there). Put your own Ghostty settings in
+`~/.config/ghostty/local`, which mise-me's file loads last and never touches.
+Ghostty reads the file when it starts, or on Cmd+Shift+, while it runs.
+
+The 16 ANSI colours that `ls`, `git`, syntax highlighting and friends use are
+[Gruvbox Material](https://github.com/sainnhe/gruvbox-material) (dark, medium).
+Plain text is not Gruvbox's tan, which is hard to read: it is near-white on the
+dark navy background, with a bluish selection colour. The starship prompt brings
+its own colours, chosen separately (see [Prompt themes](#prompt-themes)).
+
+iTerm2 and Terminal.app keep their settings in memory while open and write them
+back over changes made from outside, so setup only writes to a closed app. An
+open Terminal.app is handed the profile as a file instead (it opens a window
+with it) and made the default through AppleScript; anything else that could not
+be done shows up in the "Next steps" box. Quit the app and run setup again from
+another terminal to have it done for you. Ghostty never writes its own config, so
+it is always written; a running Ghostty just needs Cmd+Shift+, to reload.
+
+The zsh side works in any terminal: Option/Alt or Ctrl + arrows move by word,
+as they do with oh-my-zsh.
+
+Nothing about the machine is stored in the repo: which apps exist, their profile
+names and the choice are all found or kept on the machine at run time.
+
+## Prompt themes
+
+The prompt is [starship](https://starship.rs) in one of these colour themes,
+each a starship preset with small edits made at setup time:
+
+| Theme | Preset | Look |
+| --- | --- | --- |
+| `pixel-gem` (default) | pastel-powerline | purple to teal segments, a clock, the git segment in Gruvbox Material orange and dark text on the two light segments so every segment reads |
+| `tokyo-night` | tokyo-night | dark blue-grey segments with light blue text, as starship ships it |
+| `catppuccin-mocha` | catppuccin-powerline | Catppuccin's dark flavour |
+| `catppuccin-macchiato`, `catppuccin-frappe` | catppuccin-powerline | the two in-between flavours |
+| `catppuccin-latte` | catppuccin-powerline | Catppuccin's light flavour |
+
+Nothing is asked: a new machine gets `pixel-gem`. Pick another with
+`./bin/mise run setup --prompt tokyo-night` or
+`./bin/mise run setup --prompt catppuccin-mocha` (or `cd bases/core && mise run
+prompt --prompt ...` for just that step). The choice is saved in
+`~/.local/state/mise-me/prompt` and kept by later runs. starship reads its config
+on every prompt, so open shells change at once; the terminal's own colours are
+unaffected. The config is `~/.config/starship.toml` (backed up when replaced);
+if a starship update changes a preset so an edit no longer applies, setup stops
+rather than install a half-edited prompt.
+
+## Headless Linux (a server or VM over SSH)
+
+The core base is the same on Linux; only the macOS pieces (Docker Sandboxes, the
+font and the terminal apps) are left out, and setup tells you so in "Next steps".
+Nothing is asked when nobody can answer (no tty, or `CI` set), so the same
+commands work from a provisioning script.
+
+1. Install what setup cannot: `sudo apt install zsh curl` (Ubuntu Server ships
+   without zsh; setup refuses to start without it and names the command).
+2. Clone the repo and run `./bin/mise run setup core`. No `--terminal` flag is
+   needed: the terminal step skips itself off macOS. Add `--prompt <theme>` for
+   a prompt other than `pixel-gem` (see [Prompt themes](#prompt-themes)).
+3. Make zsh the login shell: `chsh -s "$(command -v zsh)"`, then reconnect.
+   Setup lists this step when `$SHELL` is not zsh, and never runs `chsh` itself
+   because it asks for a password.
+4. The prompt's icons are drawn by the terminal you connect from, so the Nerd
+   Font belongs on that machine, not the VM. A Mac set up with mise-me has it.
+
+The whole thing unattended, as a provisioning script would run it:
+
+```sh
+sudo apt-get install -y zsh curl
+git clone <this repo> mise-me && cd mise-me
+CI=1 ./bin/mise run setup core --prompt tokyo-night
+sudo chsh -s "$(command -v zsh)" "$USER"
+```
+
+`CI=1` (or no tty) means nothing is asked; `sudo chsh` avoids the password
+prompt that `chsh` alone would show. Swap the theme as you like, for example
+`--prompt catppuccin-mocha`, or leave the flag out for `pixel-gem`.
+
+`sbx` is macOS only in core (`os = ["macos"]` in its mise config). On Linux it
+needs Docker and KVM, which a VM only has with nested virtualization turned on.
+On a Linux box that has `/dev/kvm`, add the tool to `~/.config/mise/conf.d/`
+with the `linux-*` assets from the same GitHub release and follow Docker's
+[install steps](https://docs.docker.com/ai/sandboxes/install/).
+
+## Shell extras
+
+- **Ctrl+R** is [atuin](https://atuin.sh): a searchable history database that
+  also records the folder, exit code and duration of each command. Press Ctrl+R
+  again to narrow it to this folder or this session. Everything stays on this
+  machine (`~/.local/share/atuin`); nothing syncs unless you run `atuin login`,
+  and update checks are off. The Up arrow stays plain zsh history, so
+  autosuggestions keep working. Config: `~/.config/atuin/config.toml`.
+- **Tab** is [fzf-tab](https://github.com/Aloxaf/fzf-tab): completions open in an
+  fzf menu, with a folder preview for `cd` and `z`. Type to filter, `<` and `>`
+  switch groups, Enter picks.
+- **Ctrl+T** (file paths) and **Option+C** (cd) use [fd](https://github.com/sharkdp/fd),
+  so they are quick, include dotfiles and skip anything `.gitignore`d. Set your
+  own `FZF_DEFAULT_COMMAND` in `~/.zshrc.local` to change that.
 
 ## Add a new base
 
@@ -131,20 +267,24 @@ mise-me/
 To let a shared extension work with the new base, add its name to that
 extension's `works_with`.
 
+An extension can add a line to the "Next steps" box with
+`next_step = "..."` in its `ext.toml` (see `extensions/agents/ext.toml`).
+
 ## Tests
 
 `sh tests/run.sh` checks the router, the shared library and each base against
-throwaway home folders, with a fake `curl` and a fake `mise`, so it installs
-nothing. The first run downloads two pinned zsh plugin tarballs (about 100 KB)
-into `~/.cache/mise-me-tests` so their real checksums are tested; after that it
-runs offline.
+throwaway home folders, with a fake `curl` and a fake `mise` (and, for the
+terminal step, fake `osascript`, `defaults` and `pgrep`), so it installs nothing.
+On macOS one test runs the real Terminal.app helper against a throwaway settings
+domain, never your real settings. The first run downloads three pinned zsh plugin
+tarballs (about 150 KB) into `~/.cache/mise-me-tests` so their real checksums are
+tested; after that it runs offline. Nothing downloads an app.
 
 ## Notes
 
 - patronus is installed from `github.com/darkquasar/patronus`, so that repository
   name appears in core's mise config.
-- On Linux, `sbx` also needs KVM and Docker's
-  [install steps](https://docs.docker.com/ai/sandboxes/install/); mise only puts
-  the binary on your `PATH`.
+- `sbx` is installed on macOS only; see [Headless Linux](#headless-linux-a-server-or-vm-over-ssh)
+  for why, and how to add it on a Linux machine with KVM.
 - Inside an sbx sandbox, sbx copies your host git identity into the sandbox's
   `~/.gitconfig`. That comes from sbx, not from this repo.
