@@ -1,0 +1,14 @@
+
+# catppuccin-cool: the catppuccin-powerline layout in the cool colours of
+# Catppuccin Mocha, from mauve on the left to teal on the right. The keys are
+# the colour names the layout uses; the comment says which Mocha colour each
+# one now is. Added to starship.toml by bases/core/mise-tasks/prompt.
+[palettes.catppuccin_cool]
+red = "#cba6f7"      # mauve: user and OS
+peach = "#b4befe"    # lavender: folder
+yellow = "#89b4fa"   # blue: git
+green = "#74c7ec"    # sapphire: languages, and the prompt arrow
+sapphire = "#89dceb" # sky: docker and conda
+lavender = "#94e2d5" # teal: time and command duration
+crust = "#11111b"    # crust: text on every segment
+error = "#f38ba8"    # red: the prompt arrow after a failed command

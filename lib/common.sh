@@ -246,7 +246,7 @@ parse_terminals() {
 # prompt, see bases/core/mise-tasks/prompt) and print it. pixel-gem is the
 # default; tokyo-night is starship's preset of that name; the catppuccin ones
 # are the four flavours of its powerline preset.
-prompt_themes="pixel-gem tokyo-night catppuccin-latte catppuccin-frappe catppuccin-macchiato catppuccin-mocha"
+prompt_themes="pixel-gem tokyo-night catppuccin-latte catppuccin-frappe catppuccin-macchiato catppuccin-mocha catppuccin-cool"
 parse_prompt() {
   case " $prompt_themes " in
     *" $1 "*) [ -n "$1" ] ;;

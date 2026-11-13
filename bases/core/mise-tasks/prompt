@@ -1,6 +1,6 @@
 #!/bin/sh
 #MISE description="Write the starship prompt config in the chosen colour theme (pixel-gem by default)"
-#USAGE flag "--prompt <theme>" help="Prompt colour theme: pixel-gem (default), tokyo-night, catppuccin-latte, catppuccin-frappe, catppuccin-macchiato or catppuccin-mocha"
+#USAGE flag "--prompt <theme>" help="Prompt colour theme: pixel-gem (default), tokyo-night, catppuccin-latte, catppuccin-frappe, catppuccin-macchiato, catppuccin-mocha or catppuccin-cool"
 #
 # Which theme comes from, in order: MISE_ME_PROMPT (the --prompt flag), the
 # choice saved on this machine, or pixel-gem. Only an explicit choice is saved
@@ -76,6 +76,38 @@ case $theme in
     grep -q '^\$time\\$' "$tmp/preset.toml" && grep -q '^\[time\]$' "$tmp/preset.toml" ||
       upstream tokyo-night "time segment"
     cp "$tmp/preset.toml" "$tmp/starship.toml"
+    ;;
+  catppuccin-cool)
+    # catppuccin-powerline's layout with a palette of Catppuccin Mocha's cool
+    # colours (assets/prompts/catppuccin-cool.toml). There "red" is mauve, so
+    # the arrow after a failed command gets a red of its own ("error").
+    preset catppuccin-powerline
+    pal="$base/assets/prompts/catppuccin-cool.toml"
+    LC_ALL=C grep -q "^palette = 'catppuccin_mocha'$" "$tmp/preset.toml" || upstream catppuccin-powerline "palette line"
+    # Every colour the layout uses must be in the palette, or that segment
+    # would lose its colour. Colours sit in style values (style = "...") and
+    # after a format's text ([text](style)), with or without fg:/bg:. Each word
+    # there that is not a modifier, a hex colour, a number or $style counts.
+    # LC_ALL=C: the preset holds UTF-8 symbols; matching stays byte-wise.
+    q="'"
+    {
+      LC_ALL=C grep -oE '\]\([^)]*\)' "$tmp/preset.toml" | LC_ALL=C sed 's/^](//; s/)$//'
+      LC_ALL=C sed -n -e 's/^[a-z_]*style[a-z_]* = "\([^"]*\)"$/\1/p' \
+        -e "s/^[a-z_]*style[a-z_]* = $q\\([^$q]*\\)$q\$/\\1/p" "$tmp/preset.toml"
+    } | tr ' ' '\n' | LC_ALL=C sed 's/^[fb]g://' |
+      LC_ALL=C grep -vE '^$|^[$#]|^[0-9]+$|^(bold|italic|underline|dimmed|inverted|blink|hidden|strikethrough|none|prev_fg|prev_bg)$' |
+      LC_ALL=C sort -u > "$tmp/colours"
+    [ -s "$tmp/colours" ] || upstream catppuccin-powerline "no named colours"
+    LC_ALL=C sed -n 's/^\([a-z_]*\) = .*/\1/p' "$pal" > "$tmp/palette-keys"
+    while IFS= read -r colour; do
+      LC_ALL=C grep -Fxq -- "$colour" "$tmp/palette-keys" ||
+        upstream catppuccin-powerline "it uses '$colour', which catppuccin-cool.toml lacks"
+    done < "$tmp/colours"
+    LC_ALL=C sed -e "s/^palette = 'catppuccin_mocha'$/palette = 'catppuccin_cool'/" \
+      -e '/^error_symbol = /s/fg:red)/fg:error)/' "$tmp/preset.toml" > "$tmp/starship.toml"
+    cat "$pal" >> "$tmp/starship.toml"
+    LC_ALL=C grep -q "^palette = 'catppuccin_cool'$" "$tmp/starship.toml" || upstream catppuccin-powerline "palette line"
+    LC_ALL=C grep -q '^error_symbol = .*fg:error)' "$tmp/starship.toml" || upstream catppuccin-powerline "error arrow"
     ;;
   catppuccin-*)
     # catppuccin-powerline ships all four flavours as named palettes and picks

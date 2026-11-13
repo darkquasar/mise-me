@@ -64,7 +64,11 @@ case $2 in
   pastel-powerline)
     { printf "format = '[ \342\231\245 \$time ](\$style)'\n"; printf 'style = "bg:#FCA17D"\nstyle = "bg:#86BBD8"\n'; } > "$out" ;;
   catppuccin-powerline)
-    { printf "palette = 'catppuccin_mocha'\n"; for f in mocha frappe macchiato latte; do printf '[palettes.catppuccin_%s]\nred = "#f38ba8"\n' "$f"; done; } > "$out" ;;
+    # FAKE_STARSHIP_LINE adds one line, for example a colour the preset did not use before.
+    { printf "palette = 'catppuccin_mocha'\n"; printf '[](red)\\\nstyle = "bg:red fg:crust"\n'
+      [ -z "${FAKE_STARSHIP_LINE:-}" ] || printf '%s\n' "$FAKE_STARSHIP_LINE"
+      printf "success_symbol = '[\342\235\257](bold fg:green)'\nerror_symbol = '[\342\235\257](bold fg:red)'\n"
+      for f in mocha frappe macchiato latte; do printf '[palettes.catppuccin_%s]\nred = "#f38ba8"\n' "$f"; done; } > "$out" ;;
   tokyo-night)
     printf 'format = """\n$time\\\n$character"""\n\n[time]\nstyle = "bg:#1d2230"\n' > "$out" ;;
   *) echo "fake starship: no preset $2" >&2; exit 1 ;;
@@ -137,6 +141,27 @@ fresh_home pflag
 prompt_run usage_prompt=catppuccin-frappe; rc=$?
 check "prompt: the task's own --prompt flag works when run on its own" \
   '[ "$rc" -eq 0 ] && starship_toml | grep -q "^palette = '"'"'catppuccin_frappe'"'"'$" && [ "$(saved_prompt)" = catppuccin-frappe ]'
+
+fresh_home promptcool
+prompt_run MISE_ME_PROMPT=catppuccin-cool; rc=$?
+check "prompt: catppuccin-cool keeps the catppuccin layout with the cool palette and saves the choice" \
+  '[ "$rc" -eq 0 ] && starship_toml | grep -q "^style = \"bg:red fg:crust\"$" && starship_toml | grep -q "^palette = '"'"'catppuccin_cool'"'"'$" && starship_toml | grep -q "^\[palettes\.catppuccin_cool\]$" && starship_toml | grep -q "^red = \"#cba6f7\"" && [ "$(saved_prompt)" = catppuccin-cool ]'
+check "prompt: catppuccin-cool gives the failed-command arrow its own red" \
+  'starship_toml | grep -q "^error_symbol = .*fg:error)" && starship_toml | grep -q "^error = \"#f38ba8\"" && starship_toml | grep -q "^success_symbol = .*fg:green)"'
+# A colour the palette lacks, written any way starship accepts, stops setup and
+# leaves the existing config exactly as it was.
+for line in 'style = "bg:rosewater fg:crust"' '[](rosewater)\' '[x](bold fg:red2)'; do
+  fresh_home promptcoolnew
+  mkdir -p "$H/.config"; echo "mine" > "$H/.config/starship.toml"
+  prompt_run MISE_ME_PROMPT=catppuccin-cool FAKE_STARSHIP_LINE="$line"; rc=$?
+  check "prompt: catppuccin-cool stops, changing nothing, if the preset gains a colour its palette lacks: $line" \
+    '[ "$rc" -ne 0 ] && [ "$(starship_toml)" = mine ] && [ -z "$(backups -type f)" ] && grep -q "catppuccin-cool.toml lacks" "$H/.out"'
+done
+# Things in a style that are not palette colours do not stop it.
+fresh_home promptcoolok
+prompt_run MISE_ME_PROMPT=catppuccin-cool FAKE_STARSHIP_LINE='[x](bold italic fg:#ffffff bg:prev_bg $style)'; rc=$?
+check "prompt: catppuccin-cool accepts modifiers, hex colours and \$style in the preset" \
+  '[ "$rc" -eq 0 ] && starship_toml | grep -q "^palette = '"'"'catppuccin_cool'"'"'$"'
 
 fresh_home pbad
 prompt_run MISE_ME_PROMPT=neon; rc=$?
