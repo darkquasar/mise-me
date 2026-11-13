@@ -121,7 +121,7 @@ mise-me/
 | `./bin/mise run setup <base> --switch` | Replace this machine's base |
 | `./bin/mise run setup --terminal ask` | Choose the terminal apps again (macOS) |
 | `./bin/mise run setup --terminal all` | Choose without a prompt: `ghostty`, `iterm2`, `terminal-app` (comma-separated), `all` or `none` |
-| `./bin/mise run setup --prompt tokyo-night` | Switch the prompt's colours: `pixel-gem` (default), `tokyo-night`, `catppuccin-latte`, `catppuccin-frappe`, `catppuccin-macchiato` or `catppuccin-mocha` |
+| `./bin/mise run setup --prompt tokyo-night` | Switch the prompt's colours: `pixel-gem` (default), `tokyo-night`, `catppuccin-latte`, `catppuccin-frappe`, `catppuccin-macchiato`, `catppuccin-mocha` or `catppuccin-cool` |
 | `./bin/mise run new-base <name>` | Create a new base from `bases/_template` |
 | `cd bases/core && mise run setup` | Run a base on its own (no extensions) |
 | `cd bases/core && mise run prompt` | Re-run a single step of a base |
@@ -188,6 +188,7 @@ each a starship preset with small edits made at setup time:
 | `catppuccin-mocha` | catppuccin-powerline | Catppuccin's dark flavour |
 | `catppuccin-macchiato`, `catppuccin-frappe` | catppuccin-powerline | the two in-between flavours |
 | `catppuccin-latte` | catppuccin-powerline | Catppuccin's light flavour |
+| `catppuccin-cool` | catppuccin-powerline | the Catppuccin layout in Mocha's cool colours only (mauve to teal), with a red arrow after a failed command; its palette is `bases/core/assets/prompts/catppuccin-cool.toml` |
 
 Nothing is asked: a new machine gets `pixel-gem`. Pick another with
 `./bin/mise run setup --prompt tokyo-night` or

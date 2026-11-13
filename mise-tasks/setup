@@ -4,7 +4,7 @@
 #USAGE flag "--with <extensions>" help="Comma-separated extensions, for example: agents. --with '' removes all."
 #USAGE flag "--switch" help="Allow replacing the base this machine already has"
 #USAGE flag "--terminal <apps>" help="macOS: terminal apps to set up: ghostty, iterm2, terminal-app (comma-separated), all, none, or ask. Default: the saved choice, else ask (or detect when nobody can answer)."
-#USAGE flag "--prompt <theme>" help="Prompt colour theme: pixel-gem, tokyo-night, catppuccin-latte, catppuccin-frappe, catppuccin-macchiato or catppuccin-mocha. Default: the saved choice, else pixel-gem."
+#USAGE flag "--prompt <theme>" help="Prompt colour theme: pixel-gem, tokyo-night, catppuccin-latte, catppuccin-frappe, catppuccin-macchiato, catppuccin-mocha or catppuccin-cool. Default: the saved choice, else pixel-gem."
 #
 # Phases: 1 plan (validate everything, no changes), 2 reconcile (move aside
 # extension files no longer wanted), 3 the base's own setup, 4 extensions and
